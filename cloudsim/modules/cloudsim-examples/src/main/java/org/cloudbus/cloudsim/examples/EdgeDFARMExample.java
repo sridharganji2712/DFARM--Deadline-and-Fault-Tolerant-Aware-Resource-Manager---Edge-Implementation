@@ -14,8 +14,8 @@ import java.util.*;
  * EdgeDFARMExample — end-to-end simulation of DFARM on a 3-node edge topology.
  *
  * Topology (from PPT slide 11):
- *   Node A: 4 VMs, max 1000 MIPS, bootTime=5s,  acqDelay=10s, wireless=20 Mbps
- *   Node B: 6 VMs, max 2000 MIPS, bootTime=3s,  acqDelay=8s,  wireless=50 Mbps
+ *   Node A: 4 VMs, max 1000 MIPS, bootTime=5s,  acqDelay=10s, wireless=50 Mbps
+ *   Node B: 6 VMs, max 2000 MIPS, bootTime=3s,  acqDelay=8s,  wireless=35 Mbps
  *   Node C: 4 VMs, max  750 MIPS, bootTime=8s,  acqDelay=15s, wireless=10 Mbps
  *
  * Each node is modelled as a separate CloudSim Datacenter.
@@ -56,11 +56,16 @@ public class EdgeDFARMExample {
 
             List<EdgeNode> edgeNodes = List.of(nodeA, nodeB, nodeC);
 
-            //Create EdgeDFARMBroker 
+            //Create one CloudSim Datacenter per edge node (required for VM placement)
+            createDatacenter("Datacenter_A", new double[]{100, 200, 300, 500});
+            createDatacenter("Datacenter_B", new double[]{500, 750, 900, 1000, 1100, 1200});
+            createDatacenter("Datacenter_C", new double[]{100, 250, 500, 750});
+
+            //Create EdgeDFARMBroker
             EdgeDFARMBroker broker = new EdgeDFARMBroker(
                 "EdgeDFARMBroker",
                 edgeNodes,
-                0.30,   
+                0.15,   
                 false,  
                 true   
             );
@@ -182,19 +187,19 @@ public class EdgeDFARMExample {
     Random rand = new Random(42);
 
     int idCounter = 0;
-    int totalTasks = 400;
+    int totalTasks = 300;
 
     for (int i = 0; i < totalTasks; i++) {
 
         //1. BURST + RANDOM ARRIVAL 
         double arrivalTime;
-     if (i < 200) {
-    arrivalTime = rand.nextDouble() * 10;          // early
-} else if (i < 600) {
-    arrivalTime = 10 + rand.nextDouble() * 10;     // HEAVY BURST
-} else {
-    arrivalTime = 20 + rand.nextDouble() * 40;     // tail
-}
+        if (i < 200) {
+            arrivalTime = rand.nextDouble() * 10;          // early (0–10 s)
+        } else if (i < 360) {
+            arrivalTime = 10 + rand.nextDouble() * 10;    // heavy burst (10–20 s)
+        } else {
+            arrivalTime = 20 + rand.nextDouble() * 40;    // tail (20–60 s)
+        }
 
         //2. NODE BIAS (FORCE CROSS-NODE)
         String nodeBias;
@@ -334,5 +339,36 @@ public class EdgeDFARMExample {
         Log.printlnConcat("ARUR                 : ",
                 String.format("%.4f", dfarm.computeARUR()));
         Log.println("====================================");
+    }
+
+    //create one CloudSim Datacenter with one host whose PEs match the given MIPS values
+    private static Datacenter createDatacenter(String name, double[] mipsValues) {
+        List<Pe> peList = new ArrayList<>();
+        for (double mips : mipsValues) {
+            peList.add(new Pe(new PeProvisionerSimple(mips)));
+        }
+
+        int  totalRam     = mipsValues.length * 1024;   // 1024 MB per VM slot
+        long totalBw      = mipsValues.length * 1000L;  // 1000 Mbps per VM slot
+        long totalStorage = mipsValues.length * 10000L; // 10000 MB per VM slot
+
+        List<Host> hostList = new ArrayList<>();
+        hostList.add(new Host(
+            new RamProvisionerSimple(totalRam),
+            new BwProvisionerSimple(totalBw),
+            totalStorage,
+            peList,
+            new VmSchedulerTimeShared(peList)
+        ));
+
+        DatacenterCharacteristics characteristics = new DatacenterCharacteristics(
+            "x86", "Linux", "KVM", hostList, 10.0, 0.0, 0.0, 0.0, 0.0);
+
+        try {
+            return new Datacenter(name, characteristics,
+                new VmAllocationPolicySimple(hostList), new LinkedList<>(), 0);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to create datacenter: " + name, e);
+        }
     }
 }

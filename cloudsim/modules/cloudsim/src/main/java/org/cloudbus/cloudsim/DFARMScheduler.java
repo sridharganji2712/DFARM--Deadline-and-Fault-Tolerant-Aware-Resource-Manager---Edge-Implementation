@@ -248,50 +248,6 @@ public class DFARMScheduler {
         return candidates;
     }
 
-    //collect candidates from released-idle, fresh, and cross-node sources
-    private List<AcqCandidate> buildAcqCandidates(EdgeCloudlet task) {
-        List<AcqCandidate> candidates = new ArrayList<>();
-        Set<EdgeVm>        seen       = new HashSet<>();
-
-        EdgeNode origin = task.getOriginNode();
-        if (origin == null) return candidates;   // no origin — acquisition skipped
-
-        // Uplink is always device→origin-node (not VM's node)
-        double taskUplink = origin.computeUplinkDelay(task.getInputSizeKB());
-
-        // Source 1: released-idle VM on origin node (bootTime only, no acqDelay)
-        EdgeVm rv = origin.findReleasedVm();
-        if (rv != null && !availableVms.contains(rv) && seen.add(rv)) {
-            candidates.add(new AcqCandidate(rv, origin, true, false,
-                                            0.0, taskUplink, rv.getBootTime(),
-                                            taskCost(rv, task)));
-        }
-
-        // Source 2: fresh VM from origin node pool (full cold-start cost)
-        EdgeVm fv = origin.findFreshVm();
-        if (fv != null && !availableVms.contains(fv) && seen.add(fv)) {
-            double base = fv.getBootTime() + fv.getAcquisitionDelay();
-            candidates.add(new AcqCandidate(fv, origin, false, false,
-                                            0.0, taskUplink, base,
-                                            taskCost(fv, task)));
-        }
-
-        // Source 3: ALL neighbors of origin node (cross-node, inter-node delay applies)
-        for (EdgeNode neighbor : origin.getNeighborNodes()) {
-            boolean isReused = neighbor.findReleasedVm() != null;
-            EdgeVm  vm       = isReused ? neighbor.findReleasedVm() : neighbor.findFreshVm();
-            if (vm == null || availableVms.contains(vm) || !seen.add(vm)) continue;
-            double interNode = origin.computeInterNodeDelay(task.getInputSizeKB());
-            double base      = isReused ? vm.getBootTime()
-                                        : vm.getBootTime() + vm.getAcquisitionDelay();
-            candidates.add(new AcqCandidate(vm, neighbor, isReused, true,
-                                            interNode, taskUplink, base,
-                                            taskCost(vm, task)));
-        }
-
-        return candidates;
-    }
-
     //activate winning candidate: register with node, seed vmCtMap, add to pool
     private void activateCandidate(AcqCandidate winner,
                                    EdgeCloudlet task,

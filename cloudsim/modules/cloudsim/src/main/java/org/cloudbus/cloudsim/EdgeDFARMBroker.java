@@ -137,7 +137,11 @@ public class EdgeDFARMBroker extends DatacenterBroker {
 
     //submit with delay = uplink + boot+acq (first task on VM only) + inter-node (cross-node only)
     private void submitWithDelay(EdgeCloudlet cloudlet, EdgeVm vm, int datacenterId) {
-        double uplinkDelay = vm.computeUplinkDelay(cloudlet.getInputSizeKB());
+        // uplink is device→ORIGIN node; use origin node's wireless bandwidth, not VM's node
+        EdgeNode origin = cloudlet.getOriginNode();
+        double uplinkDelay = (origin != null)
+                ? origin.computeUplinkDelay(cloudlet.getInputSizeKB())
+                : vm.computeUplinkDelay(cloudlet.getInputSizeKB());
 
         boolean isCrossNode    = dfarm.getCrossNodeCloudletIds().contains(cloudlet.getCloudletId());
         double  interNodeDelay = isCrossNode ? vm.computeInterNodeDelay(cloudlet.getInputSizeKB()) : 0.0;
